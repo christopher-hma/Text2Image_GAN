@@ -12,39 +12,38 @@ import numpy.random as random
 import pickle
 
 
-def get_data(data,cfg):
+def get_data(data,device):
     
     imgs, captions, captions_lens = data
 
-    sorted_cap_lens, sorted_cap_indices = torch.sort(captions_lens, 0, True)
-
     real_imgs = []
-    
-    for i in range(len(imgs)):
         
-        imgs[i] = imgs[i][sorted_cap_indices]
-        
-        if cfg.CUDA:
-            
-            real_imgs.append(Variable(imgs[i]).cuda())
-            
-        else:
-            
-            real_imgs.append(Variable(imgs[i]))
-
+    sorted_cap_lens, sorted_cap_indices = torch.sort(captions_lens, 0, True)
+       
+    imgs[0] = imgs[0][sorted_cap_indices]
+      
     captions = captions[sorted_cap_indices].squeeze()
 
-    if cfg.CUDA:
-        captions = Variable(captions).cuda()
-        sorted_cap_lens = Variable(sorted_cap_lens).cuda()
-    else:
-        captions = Variable(captions)
-        sorted_cap_lens = Variable(sorted_cap_lens)
+    if device == torch.device("cuda"):
 
+       captions = Variable(captions).cuda()
+        
+       sorted_cap_lens = Variable(sorted_cap_lens).cuda()
+
+       real_imgs.append(Variable(imgs[0]).cuda())
+    
+    else:
+
+       captions = Variable(captions)
+        
+       sorted_cap_lens = Variable(sorted_cap_lens)
+
+       real_imgs.append(Variable(imgs[0]))
+    
     return [real_imgs, captions, sorted_cap_lens]
 
 
-def retrieve_img(path,transform=None, normalize=None):
+def retrieve_imgs(path,transform=None, normalize=None):
     
     image = Image.open(path).convert('RGB')
     
@@ -56,7 +55,7 @@ def retrieve_img(path,transform=None, normalize=None):
     
     output.append(normalize(image))
 
-    return ret
+    return output
 
 
 class Dataset():
@@ -67,9 +66,8 @@ class Dataset():
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         self.target_transform = target_transform
-        self.num_captions_per_image = cfg.text_captions_per_image
-        self.mode = mode
-        self.data_dir = cfg.data_dir        
+        self.num_captions_per_image = cfg["text_captions_per_image"]
+        self.mode = mode      
         self.cfg = cfg
         self.filenames = self.get_filenames()
         self.captions, self.ixtoword, self.wordtoix, self.n_words = self.load_caption_data()
@@ -78,12 +76,12 @@ class Dataset():
         
         if self.mode == 'train':
             
-           file_path = self.cfg.train_filenames_pickle
+           file_path = self.cfg["train_filenames_pickle"]
             
             
         else:
             
-           file_path = self.cfg.test_filenames_pickle
+           file_path = self.cfg["test_filenames_pickle"]
         
         with open(file_path, 'rb') as f:
             
@@ -96,19 +94,19 @@ class Dataset():
         
     def load_caption_data(self):
         
-        file_path = self.cfg.captions
+        file_path = self.cfg["captions"]
         
         with open(file_path, 'rb') as f:
             
-                out = pickle.load(f)
+             out = pickle.load(f)
                 
-                train_captions, test_captions, ixtoword, wordtoix = out[0], out[1], out[2], out[3]
+             train_captions, test_captions, ixtoword, wordtoix = out[0], out[1], out[2], out[3]
                 
-                del out
+             del out
                 
-                n_words = len(ixtoword)
+             n_words = len(ixtoword)
                 
-                print('Load from: ', file_path)
+             print('Load from: ', file_path)
                 
         if self.mode == 'train':
             
@@ -132,21 +130,23 @@ class Dataset():
             
         num_words = len(sent_caption)
         
-        caption = np.zeros((self.cfg.MAX_WORD_PER_CAPTION, 1), dtype='int64')
+        caption = np.zeros((self.cfg["MAX_WORD_PER_CAPTION"], 1), dtype='int64')
         
         cap_len = num_words
         
-        if num_words <= self.cfg.MAX_WORD_PER_CAPTION:
+        if num_words <= self.cfg["MAX_WORD_PER_CAPTION"]:
             
            caption[:num_words, 0] = sent_caption
+
+           cap_len = self.cfg["MAX_WORD_PER_CAPTION"]
         
         else:
             ix = list(np.arange(num_words))            
             np.random.shuffle(ix)            
-            ix = ix[:self.cfg.MAX_WORD_PER_CAPTION]           
+            ix = ix[:self.cfg["MAX_WORD_PER_CAPTION"]]           
             ix = np.sort(ix)
             caption[:, 0] = sent_caption[ix]
-            cap_len = self.cfg.MAX_WORD_PER_CAPTION
+            cap_len = self.cfg["MAX_WORD_PER_CAPTION"]
             
         return caption, cap_len
 
@@ -154,10 +154,10 @@ class Dataset():
         
         file_name = self.filenames[index]
         
-        data_dir = self.cfg.image_dir
+        data_dir = self.cfg["train_image_dir"] if self.mode == "train" else self.cfg["test_image_dir"]
         
         img_name = '%s/%s.jpg' % (data_dir, file_name)
-        
+       
         imgs = retrieve_imgs(img_name,self.transform, normalize=self.norm)
         
         ix = random.randint(0, self.num_captions_per_image)
